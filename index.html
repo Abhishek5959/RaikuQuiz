@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Raiku Quiz</title>
+<style>
+    /* Background similar to Raiku.com */
+    html,body { height: 100%; margin: 0; }
+    body {
+        font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        background: url('background.jpg') no-repeat center center fixed;
+        background-size: cover;
+        color: #fff;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    .container {
+        max-width: 900px;
+        margin: 30px auto;
+        padding: 28px;
+        background: rgba(0,0,0,0.75);
+        border-radius: 14px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        overflow-y: auto;
+        max-height: calc(100vh - 60px);
+    }
+    h1 {
+        text-align: center;
+        margin: 6px 0 22px;
+        font-size: 2.0rem;
+        color: #00ffcc;
+    }
+    .question {
+        margin-bottom: 18px;
+        padding: 14px;
+        background: rgba(255,255,255,0.04);
+        border-radius: 10px;
+    }
+    .question p {
+        margin: 0 0 10px 0;
+        font-size: 1.05rem;
+    }
+    .options button {
+        display: block;
+        width: 100%;
+        margin: 6px 0;
+        padding: 10px 12px;
+        font-size: 15px;
+        color: #fff;
+        background: rgba(255,255,255,0.08);
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+        text-align: left;
+        transition: background 0.18s, transform 0.08s;
+    }
+    .options button:hover { transform: translateY(-1px); background: rgba(255,255,255,0.12); }
+    .options button.selected { background: rgba(0,255,255,0.35); color: #000; }
+    .submit-btn {
+        display: inline-block;
+        margin: 18px auto 6px;
+        padding: 12px 26px;
+        font-size: 17px;
+        background: #00ffcc;
+        color: #000;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+    }
+    .submit-btn[disabled] { opacity: 0.6; cursor: default; }
+    .participant-count {
+        text-align: center;
+        margin-top: 14px;
+        font-size: 17px;
+        color: #ffd700;
+    }
+    .note {
+        text-align: center;
+        color: rgba(255,255,255,0.7);
+        font-size: 13px;
+        margin-top: 8px;
+    }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Raiku Quiz</h1>
+    <div id="quiz"></div>
+
+    <div style="text-align:center;">
+      <button class="submit-btn" id="submitBtn">Submit Quiz</button>
+    </div>
+
+    <div class="participant-count" id="participantCount"></div>
+    <div class="note">Note: participant count is stored locally in this browser/profile only.</div>
+  </div>
+
+<script>
+/* ---------- Quiz Data ---------- */
+const quizData = [
+  { question: "Q1. What is Raiku’s role relative to Solana?", options: ["Independent blockchain","Coordination / extension layer","Layer-2 rollup","Decentralized storage"], answer: 2 },
+  { question: "Q2. Which is not a new transaction primitive of Raiku?", options: ["Guaranteed execution","Ahead-of-time inclusion","Data / proof streaming","Off-chain fallback settlement"], answer: 4 },
+  { question: "Q3. How does Raiku aim to mitigate MEV risks?", options: ["Private mempools","Eliminating private mempools","Order flow bans","Oracle-based ordering"], answer: 2 },
+  { question: "Q4. Which design avoids liquidity fragmentation on Solana?", options: ["Side chains","Separate bridges","Direct settlement on Solana L1","Cross-chain messaging"], answer: 3 },
+  { question: "Q5. What does “decoupling execution and consensus” enable?", options: ["Offchain consensus","Independent execution environments","No validators","Proof-of-work consensus"], answer: 2 },
+  { question: "Q6. Raiku introduces “off-chain, edge compute” modules. What is a claimed advantage of this approach?", options: ["Execution is completely separated from Solana and never interacts","Faster finality, isolation of faults, and concurrent execution of vote and user logic","No need for validators","Users must stake to access compute"], answer: 2 },
+  { question: "Q7. How does Raiku plan to scale throughput?", options: ["Single leader slots","Rollups","Multiple Concurrent Leaders (MCL)","Delegated staking"], answer: 3 },
+  { question: "Q8. Why introduce a blockspace marketplace?", options: ["Reserve inclusion ahead of time","Validator-only inclusion","Random ordering","No fees"], answer: 1 },
+  { question: "Q9. Which Solana proposal aligns validator incentives?", options: ["Fee burn","SIMD-0096: 100% fees to validators","Fee removal","Proof of work"], answer: 2 },
+  { question: "Q10. Which use case benefits most from Raiku?", options: ["Low-frequency transfers","High-frequency trading & real-time apps","Simple swaps","Batch settlement"], answer: 2 }
+];
+
+/* ---------- localStorage keys ---------- */
+const PARTICIPANTS_KEY = 'raiku_participants_v1';
+const USER_SUBMITTED_KEY = 'raiku_user_submitted_v1';
+
+/* ---------- helpers for localStorage ---------- */
+function readParticipants() {
+  const raw = localStorage.getItem(PARTICIPANTS_KEY);
+  const n = parseInt(raw, 10);
+  return Number.isInteger(n) ? n : 0;
+}
+function writeParticipants(n) {
+  localStorage.setItem(PARTICIPANTS_KEY, String(n));
+  updateParticipantUI();
+}
+function hasUserSubmitted() {
+  return localStorage.getItem(USER_SUBMITTED_KEY) === '1';
+}
+function markUserSubmitted() {
+  localStorage.setItem(USER_SUBMITTED_KEY, '1');
+}
+
+/* ---------- UI references ---------- */
+const quizContainer = document.getElementById('quiz');
+const participantCountEl = document.getElementById('participantCount');
+const submitBtn = document.getElementById('submitBtn');
+
+/* ---------- render quiz ---------- */
+quizData.forEach((q, qIndex) => {
+  const qDiv = document.createElement('div');
+  qDiv.className = 'question';
+
+  const qText = document.createElement('p');
+  qText.textContent = q.question;
+  qDiv.appendChild(qText);
+
+  const optsDiv = document.createElement('div');
+  optsDiv.className = 'options';
+
+  q.options.forEach((optText, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = `${String.fromCharCode(65 + i)}. ${optText}`; // A., B., C.
+    btn.addEventListener('click', () => {
+      // clear previous selection for this question
+      optsDiv.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      q.selected = i + 1; // 1-based index to compare with q.answer
+    });
+    optsDiv.appendChild(btn);
+  });
+
+  qDiv.appendChild(optsDiv);
+  quizContainer.appendChild(qDiv);
+});
+
+/* ---------- participant UI update ---------- */
+function updateParticipantUI() {
+  participantCountEl.textContent = `Total Participants: ${readParticipants()}`;
+}
+
+/* ---------- initial state ---------- */
+updateParticipantUI();
+if (hasUserSubmitted()) {
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Already Submitted';
+}
+
+/* ---------- submit handler ---------- */
+submitBtn.addEventListener('click', () => {
+  // prevent double submit
+  if (hasUserSubmitted()) {
+    alert('You have already participated!');
+    return;
+  }
+
+  // compute score
+  let score = 0;
+  quizData.forEach(q => {
+    if (typeof q.selected === 'number' && q.selected === q.answer) score++;
+  });
+
+  // show result
+  alert(`Your Score: ${score} / ${quizData.length}`);
+
+  // increment participants (local-only)
+  const current = readParticipants();
+  writeParticipants(current + 1);
+
+  // mark this user as submitted
+  markUserSubmitted();
+
+  // disable submit button
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitted';
+});
+
+/* ---------- small utility: helpful console info (no error) ---------- */
+console.log('Raiku Quiz loaded. Participant key:', PARTICIPANTS_KEY);
+</script>
+</body>
+  </html>
